@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 
 class GutendexService
 {
@@ -27,58 +28,73 @@ class GutendexService
 
     public function getBooks()
     {
-        $response = Http::get($this->baseUrl);
+        return Cache::remember('books', now()->addMinutes(10), function () {
 
-        if (! $response->successful()) {
+            $response = Http::get($this->baseUrl);
+
+            if (! $response->successful()) {
+                return [
+                    'error' => 'Failed to fetch books',
+                ];
+            }
+
+            $books = collect($response->json()['results'])
+                ->map(fn($book) => $this->formatbook($book))
+                ->values()
+                ->toArray();
+
             return [
-                'error' => 'Failed to fetch books',
+                'count' => $response->json()['count'],
+                'books' => $books,
             ];
-        }
-
-        $books = collect($response->json()['results'])->map(fn($book) => $this->formatbook($book));
-
-        return [
-            'count' => $response->json()['count'],
-            'books' => $books,
-        ];
+        });
     }
 
-    public function show($id)
+    public function getBookByGutendexId($gutendexId)
     {
-        $response = Http::get($this->baseUrl);
-        if (! $response->successful()) {
-            return [
-                'error' => 'Failed to fetch books',
-            ];
-        }
-        $book = collect($response->json()['results'])
-            ->firstWhere('id', (int) $id);
+        return Cache::remember('book:'.$gutendexId, now()->addMinute(10),function() use($gutendexId){
 
-        if (! $book) {
-            return [
-                'error' => 'Book not found',
-            ];
-        }
-
-        return $this->formatbook($book);
+            $response = Http::get($this->baseUrl);
+            if (! $response->successful()) {
+                return [
+                    'error' => 'Failed to fetch books',
+                ];
+            }
+            $book = collect($response->json()['results'])
+                ->firstWhere('id', (int) $gutendexId);
+    
+            if (! $book) {
+                return [
+                    'error' => 'Book not found',
+                ];
+            }
+    
+            return $this->formatbook($book);
+        });
     }
 
     public function search($query)
     {
-        $response = Http::get($this->baseUrl, [
-            'search' => $query,
-        ]);
-        if (! $response->successful()) {
-            return [
-                'error' => 'Failed to fetch books',
-            ];
-        }
-        $books = collect($response->json()['results'])
-            ->map(fn($book) => $this->formatBook($book));
 
-        return [
-            'count' => $response->json()['count'],
-            'books' => $books,
-        ];
+        return Cache::remember('search:' . $query, now()->addMinute(10), function () use ($query) {
+
+            $response = Http::get($this->baseUrl, [
+                'search' => $query,
+            ]);
+            if (! $response->successful()) {
+                return [
+                    'error' => 'Failed to fetch books',
+                ];
+            }
+            $books = collect($response->json()['results'])
+                ->map(fn($book) => $this->formatbook($book))
+                ->values()
+                ->toArray();
+
+            return [
+                'count' => $response->json()['count'],
+                'books' => $books,
+            ];
+        });
     }
 }
